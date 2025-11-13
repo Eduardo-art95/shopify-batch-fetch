@@ -9,6 +9,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
+import { shopifyConfigSchema } from '@/lib/validations';
+import { z } from 'zod';
+import { logger } from '@/lib/logger';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -44,7 +47,7 @@ const Settings = () => {
         });
       }
     } catch (error) {
-      console.error('Error loading config:', error);
+      logger.error('Error loading config', error);
     }
   };
 
@@ -52,14 +55,17 @@ const Settings = () => {
     setLoading(true);
 
     try {
+      // Validate input using Zod
+      const validatedData = shopifyConfigSchema.parse(config);
+
       const { error } = await supabase
         .from('shopify_config')
         .upsert({
           user_id: user!.id,
-          shop_url: config.shop_url,
-          access_token: config.access_token,
-          trigger_order_count: config.trigger_order_count,
-          is_active: config.is_active
+          shop_url: validatedData.shop_url,
+          access_token: validatedData.access_token,
+          trigger_order_count: validatedData.trigger_order_count,
+          is_active: validatedData.is_active
         });
 
       if (error) throw error;
@@ -69,11 +75,19 @@ const Settings = () => {
         description: "As suas configurações foram atualizadas com sucesso"
       });
     } catch (error: any) {
-      toast({
-        title: "Erro ao guardar",
-        description: error.message,
-        variant: "destructive"
-      });
+      if (error instanceof z.ZodError) {
+        toast({
+          title: "Erro de validação",
+          description: error.errors[0].message,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Erro ao guardar",
+          description: error.message,
+          variant: "destructive"
+        });
+      }
     } finally {
       setLoading(false);
     }

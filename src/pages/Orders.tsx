@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { logger } from '@/lib/logger';
 
 interface Order {
   id: string;
@@ -40,7 +41,7 @@ const Orders = () => {
       if (error) throw error;
       setOrders(data || []);
     } catch (error) {
-      console.error('Error loading orders:', error);
+      logger.error('Error loading orders', error);
     } finally {
       setLoading(false);
     }

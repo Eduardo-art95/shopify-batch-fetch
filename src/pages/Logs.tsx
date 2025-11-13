@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { logger } from '@/lib/logger';
 
 interface Log {
   id: string;
@@ -37,7 +38,7 @@ const Logs = () => {
       if (error) throw error;
       setLogs(data || []);
     } catch (error) {
-      console.error('Error loading logs:', error);
+      logger.error('Error loading logs', error);
     } finally {
       setLoading(false);
     }

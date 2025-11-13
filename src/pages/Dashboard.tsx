@@ -7,6 +7,7 @@ import { Package, Activity, Settings as SettingsIcon, AlertCircle } from 'lucide
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { logger } from '@/lib/logger';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -40,7 +41,7 @@ const Dashboard = () => {
         lastSync: configResult.data?.last_sync || null
       });
     } catch (error) {
-      console.error('Error loading stats:', error);
+      logger.error('Error loading stats', error);
     } finally {
       setLoading(false);
     }
