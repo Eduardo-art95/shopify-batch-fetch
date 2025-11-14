@@ -1,4 +1,4 @@
-import { Home, Package, Settings, FileText, LogOut } from "lucide-react";
+import { Home, Package, Settings, FileText, LogOut, RefreshCw } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,7 @@ import {
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Encomendas", url: "/orders", icon: Package },
+  { title: "Sincronização", url: "/sync", icon: RefreshCw },
   { title: "Logs", url: "/logs", icon: FileText },
   { title: "Configurações", url: "/settings", icon: Settings },
 ];

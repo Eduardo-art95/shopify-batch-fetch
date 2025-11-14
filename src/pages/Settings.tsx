@@ -8,15 +8,23 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info } from 'lucide-react';
+import { Info, CheckCircle2 } from 'lucide-react';
 import { shopifyConfigSchema } from '@/lib/validations';
 import { z } from 'zod';
 import { logger } from '@/lib/logger';
+import { useShopify } from '@/hooks/useShopify';
 
 const Settings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { testConnection, loading: shopifyLoading } = useShopify();
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    tested: boolean;
+    success: boolean;
+    shopName?: string;
+  }>({ tested: false, success: false });
   const [config, setConfig] = useState({
     shop_url: '',
     access_token: '',
@@ -48,6 +56,56 @@ const Settings = () => {
       }
     } catch (error) {
       logger.error('Error loading config', error);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionStatus({ tested: false, success: false });
+
+    try {
+      // Validate input first
+      const validatedData = shopifyConfigSchema.parse(config);
+
+      const result = await testConnection(
+        validatedData.shop_url,
+        validatedData.access_token
+      );
+
+      setConnectionStatus({
+        tested: true,
+        success: result.success,
+        shopName: result.shopName,
+      });
+
+      if (result.success) {
+        toast({
+          title: "Conexão bem-sucedida!",
+          description: `Conectado à loja: ${result.shopName}`,
+        });
+      } else {
+        toast({
+          title: "Erro na conexão",
+          description: result.error || 'Não foi possível conectar',
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        toast({
+          title: "Erro de validação",
+          description: error.errors[0].message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Erro ao testar conexão",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setTestingConnection(false);
     }
   };
 
@@ -144,6 +202,29 @@ const Settings = () => {
               <p className="text-xs text-muted-foreground">
                 Obtenha este token no admin do Shopify em Apps {'>'} Develop apps
               </p>
+            </div>
+
+            {connectionStatus.tested && (
+              <Alert className={connectionStatus.success ? 'border-green-500 bg-green-50' : ''}>
+                {connectionStatus.success && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                {!connectionStatus.success && <Info className="h-4 w-4" />}
+                <AlertDescription>
+                  {connectionStatus.success
+                    ? `✓ Conectado com sucesso: ${connectionStatus.shopName}`
+                    : '✗ Falha na conexão. Verifique suas credenciais.'}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleTestConnection}
+                disabled={testingConnection || !config.shop_url || !config.access_token}
+                variant="outline"
+                type="button"
+              >
+                {testingConnection ? 'A testar...' : 'Testar Conexão'}
+              </Button>
             </div>
           </CardContent>
         </Card>
