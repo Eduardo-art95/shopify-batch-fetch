@@ -89,10 +89,89 @@ serve(async (req) => {
 
     // Process and save orders to database
     let savedCount = 0
+    const selectedFields = config.selected_fields || {}
+
     for (const order of orders) {
       const customerName = order.customer
         ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
         : 'Guest'
+
+      // Build extra_fields object based on selected fields
+      const extraFields: any = {}
+
+      if (selectedFields.customer_phone && order.customer?.phone) {
+        extraFields.customer_phone = order.customer.phone
+      }
+
+      if (selectedFields.billing_address && order.billing_address) {
+        extraFields.billing_address = order.billing_address
+      }
+
+      if (selectedFields.shipping_address && order.shipping_address) {
+        extraFields.shipping_address = order.shipping_address
+      }
+
+      if (selectedFields.line_items && order.line_items) {
+        extraFields.line_items = order.line_items
+      }
+
+      if (selectedFields.fulfillment_status) {
+        extraFields.fulfillment_status = order.fulfillment_status
+      }
+
+      if (selectedFields.financial_status) {
+        extraFields.financial_status = order.financial_status
+      }
+
+      if (selectedFields.tags && order.tags) {
+        extraFields.tags = order.tags
+      }
+
+      if (selectedFields.note && order.note) {
+        extraFields.note = order.note
+      }
+
+      if (selectedFields.discount_codes && order.discount_codes) {
+        extraFields.discount_codes = order.discount_codes
+      }
+
+      if (selectedFields.shipping_lines && order.shipping_lines) {
+        extraFields.shipping_lines = order.shipping_lines
+      }
+
+      if (selectedFields.tax_lines && order.tax_lines) {
+        extraFields.tax_lines = order.tax_lines
+      }
+
+      if (selectedFields.subtotal_price && order.subtotal_price) {
+        extraFields.subtotal_price = order.subtotal_price
+      }
+
+      if (selectedFields.total_tax && order.total_tax) {
+        extraFields.total_tax = order.total_tax
+      }
+
+      if (selectedFields.total_discounts && order.total_discounts) {
+        extraFields.total_discounts = order.total_discounts
+      }
+
+      // Extract tracking info from fulfillments
+      if ((selectedFields.tracking_number || selectedFields.tracking_company) && order.fulfillments) {
+        const trackingInfo: any = {}
+        order.fulfillments.forEach((fulfillment: any) => {
+          if (selectedFields.tracking_number && fulfillment.tracking_number) {
+            if (!trackingInfo.tracking_numbers) trackingInfo.tracking_numbers = []
+            trackingInfo.tracking_numbers.push(fulfillment.tracking_number)
+          }
+          if (selectedFields.tracking_company && fulfillment.tracking_company) {
+            if (!trackingInfo.tracking_companies) trackingInfo.tracking_companies = []
+            trackingInfo.tracking_companies.push(fulfillment.tracking_company)
+          }
+        })
+        if (Object.keys(trackingInfo).length > 0) {
+          extraFields.tracking = trackingInfo
+        }
+      }
 
       const { error: insertError } = await supabase
         .from('orders')
@@ -106,6 +185,7 @@ serve(async (req) => {
           currency: order.currency,
           status: order.financial_status,
           shopify_created_at: order.created_at,
+          extra_fields: extraFields
         }, {
           onConflict: 'user_id,shopify_order_id',
           ignoreDuplicates: false
