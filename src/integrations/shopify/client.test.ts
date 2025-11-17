@@ -13,6 +13,7 @@ describe("ShopifyClient", () => {
     shopUrl: "test-store.myshopify.com",
     accessToken: "test-access-token-123",
     apiVersion: "2024-01",
+    useProxy: false, // Use direct API calls for testing
   };
 
   const mockOrder: ShopifyOrder = {

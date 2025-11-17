@@ -7,16 +7,24 @@ import {
 import { ShopifyOrder } from "./types";
 import { supabase } from "@/integrations/supabase/client";
 
+// Mock fetch for ShopifyClient
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+// Mock supabase functions invoke - use vi.hoisted for proper hoisting
+const { mockInvoke } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+}));
+
 // Mock supabase client
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: vi.fn(),
+    functions: {
+      invoke: mockInvoke,
+    },
   },
 }));
-
-// Mock fetch for ShopifyClient
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
 
 describe("Shopify Service", () => {
   const mockUserId = "user-123-456";
@@ -54,6 +62,8 @@ describe("Shopify Service", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
+    mockInvoke.mockReset();
   });
 
   afterEach(() => {
@@ -181,14 +191,14 @@ describe("Shopify Service", () => {
   describe("verifyShopifyConnection", () => {
     it("should return valid when connection succeeds", async () => {
       // First call is for verifyConnection(), second for getOrdersCount()
-      mockFetch
+      mockInvoke
         .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ count: 25 }),
+          data: { count: 25 },
+          error: null,
         })
         .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ count: 25 }),
+          data: { count: 25 },
+          error: null,
         });
 
       const result = await verifyShopifyConnection(
@@ -201,11 +211,13 @@ describe("Shopify Service", () => {
     });
 
     it("should return invalid with error message on authentication failure", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        statusText: "Unauthorized",
-        json: () => Promise.resolve({ errors: "Invalid API key" }),
+      mockInvoke.mockResolvedValueOnce({
+        data: {
+          error: "Shopify API error",
+          status: 401,
+          details: { errors: "Invalid API key" },
+        },
+        error: null,
       });
 
       const result = await verifyShopifyConnection(
@@ -218,7 +230,10 @@ describe("Shopify Service", () => {
     });
 
     it("should return invalid on network errors", async () => {
-      mockFetch.mockRejectedValueOnce(new Error("Network unreachable"));
+      mockInvoke.mockResolvedValueOnce({
+        data: null,
+        error: { message: "Network unreachable" },
+      });
 
       const result = await verifyShopifyConnection(
         "test-store.myshopify.com",

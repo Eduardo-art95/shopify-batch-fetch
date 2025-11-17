@@ -7,6 +7,7 @@ import {
   BatchFetchResult,
   ShopifyApiError,
 } from "./types";
+import { supabase } from "@/integrations/supabase/client";
 
 const DEFAULT_API_VERSION = import.meta.env.VITE_SHOPIFY_API_VERSION || "2024-01";
 
@@ -14,13 +15,13 @@ export class ShopifyClient {
   private shopUrl: string;
   private accessToken: string;
   private apiVersion: string;
-  private baseUrl: string;
+  private useProxy: boolean;
 
-  constructor(config: ShopifyConfig) {
+  constructor(config: ShopifyConfig & { useProxy?: boolean }) {
     this.shopUrl = this.normalizeShopUrl(config.shopUrl);
     this.accessToken = config.accessToken;
     this.apiVersion = config.apiVersion || DEFAULT_API_VERSION;
-    this.baseUrl = `https://${this.shopUrl}/admin/api/${this.apiVersion}`;
+    this.useProxy = config.useProxy !== false; // Default to using proxy
   }
 
   private normalizeShopUrl(url: string): string {
@@ -36,7 +37,50 @@ export class ShopifyClient {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+    if (this.useProxy) {
+      return this.requestViaProxy<T>(endpoint, options);
+    }
+    return this.requestDirect<T>(endpoint, options);
+  }
+
+  private async requestViaProxy<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const { data, error } = await supabase.functions.invoke("shopify-proxy", {
+      body: {
+        shop_url: this.shopUrl,
+        access_token: this.accessToken,
+        endpoint,
+        method: options.method || "GET",
+        body: options.body ? JSON.parse(options.body as string) : undefined,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message || "Failed to call Shopify proxy");
+    }
+
+    if (data.error) {
+      const errorDetails = data.details;
+      let errorMessage = data.error;
+
+      if (errorDetails?.errors) {
+        if (typeof errorDetails.errors === "string") {
+          errorMessage = errorDetails.errors;
+        } else if (typeof errorDetails.errors === "object") {
+          errorMessage = Object.entries(errorDetails.errors)
+            .map(([key, messages]) => `${key}: ${(messages as string[]).join(", ")}`)
+            .join("; ");
+        }
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    return data as T;
+  }
+
+  private async requestDirect<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const baseUrl = `https://${this.shopUrl}/admin/api/${this.apiVersion}`;
+    const url = `${baseUrl}${endpoint}`;
 
     const response = await fetch(url, {
       ...options,
