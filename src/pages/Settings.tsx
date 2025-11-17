@@ -8,17 +8,23 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Info, CheckCircle, XCircle, RefreshCw, Link as LinkIcon, Unlink } from 'lucide-react';
+import { generateAuthUrl, generateState, storeOAuthState, fetchOrders, getShopInfo } from '@/services/shopify';
 
 const Settings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [shopInfo, setShopInfo] = useState<any>(null);
   const [config, setConfig] = useState({
     shop_url: '',
     access_token: '',
     trigger_order_count: 10,
-    is_active: false
+    is_active: false,
+    last_sync: null as string | null
   });
 
   useEffect(() => {
@@ -26,6 +32,12 @@ const Settings = () => {
       loadConfig();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (config.access_token && config.shop_url) {
+      loadShopInfo();
+    }
+  }, [config.access_token, config.shop_url]);
 
   const loadConfig = async () => {
     try {
@@ -40,11 +52,109 @@ const Settings = () => {
           shop_url: data.shop_url || '',
           access_token: data.access_token || '',
           trigger_order_count: data.trigger_order_count,
-          is_active: data.is_active
+          is_active: data.is_active,
+          last_sync: data.last_sync
         });
       }
     } catch (error) {
       console.error('Error loading config:', error);
+    }
+  };
+
+  const loadShopInfo = async () => {
+    try {
+      const result = await getShopInfo();
+      if (result.success && result.data) {
+        setShopInfo(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading shop info:', error);
+    }
+  };
+
+  const handleConnectShopify = () => {
+    if (!config.shop_url) {
+      toast({
+        title: "URL em falta",
+        description: "Por favor, introduza o URL da sua loja Shopify primeiro",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setConnecting(true);
+
+    // Generate state for CSRF protection
+    const state = generateState();
+    storeOAuthState(state, config.shop_url);
+
+    // Generate and redirect to OAuth URL
+    const authUrl = generateAuthUrl(config.shop_url, state);
+    window.location.href = authUrl;
+  };
+
+  const handleDisconnect = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('shopify_config')
+        .update({
+          access_token: '',
+          is_active: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user!.id);
+
+      if (error) throw error;
+
+      setConfig(prev => ({
+        ...prev,
+        access_token: '',
+        is_active: false
+      }));
+      setShopInfo(null);
+
+      toast({
+        title: "Desconectado",
+        description: "A sua loja Shopify foi desconectada"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncOrders = async () => {
+    setSyncing(true);
+    try {
+      const result = await fetchOrders({ limit: 50 });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao sincronizar pedidos');
+      }
+
+      const ordersCount = result.data?.length || 0;
+
+      toast({
+        title: "Sincronização concluída",
+        description: `${ordersCount} pedidos foram sincronizados com sucesso`
+      });
+
+      // Reload config to update last_sync
+      await loadConfig();
+    } catch (error: any) {
+      toast({
+        title: "Erro na sincronização",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -79,6 +189,8 @@ const Settings = () => {
     }
   };
 
+  const isConnected = Boolean(config.access_token && config.shop_url);
+
   return (
     <DashboardLayout>
       <div className="space-y-6 max-w-3xl">
@@ -92,45 +204,96 @@ const Settings = () => {
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Para conectar à sua loja Shopify, precisará criar uma aplicação privada no admin do Shopify
-            e obter o URL da loja e o Access Token. Mais tarde poderá usar a integração nativa do Shopify.
+            Conecte a sua loja Shopify usando OAuth para autorizar o acesso seguro aos seus pedidos.
           </AlertDescription>
         </Alert>
 
         <Card>
           <CardHeader>
-            <CardTitle>Conexão Shopify</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span>Conexão Shopify</span>
+              {isConnected ? (
+                <Badge variant="default" className="bg-green-500">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Conectado
+                </Badge>
+              ) : (
+                <Badge variant="secondary">
+                  <XCircle className="h-3 w-3 mr-1" />
+                  Não conectado
+                </Badge>
+              )}
+            </CardTitle>
             <CardDescription>
-              Introduza os dados da sua loja Shopify
+              {isConnected
+                ? `Conectado a ${config.shop_url}`
+                : 'Introduza o URL da sua loja e clique em conectar'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="shop_url">URL da Loja</Label>
-              <Input
-                id="shop_url"
-                placeholder="minhaloja.myshopify.com"
-                value={config.shop_url}
-                onChange={(e) => setConfig({ ...config, shop_url: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Exemplo: minhaloja.myshopify.com
-              </p>
-            </div>
+            {!isConnected ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="shop_url">URL da Loja</Label>
+                  <Input
+                    id="shop_url"
+                    placeholder="minhaloja.myshopify.com"
+                    value={config.shop_url}
+                    onChange={(e) => setConfig({ ...config, shop_url: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Exemplo: minhaloja.myshopify.com
+                  </p>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="access_token">Access Token</Label>
-              <Input
-                id="access_token"
-                type="password"
-                placeholder="shpat_xxxxxxxxxxxxx"
-                value={config.access_token}
-                onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Obtenha este token no admin do Shopify em Apps {'>'} Develop apps
-              </p>
-            </div>
+                <Button
+                  onClick={handleConnectShopify}
+                  disabled={connecting || !config.shop_url}
+                  className="w-full"
+                >
+                  <LinkIcon className="h-4 w-4 mr-2" />
+                  {connecting ? 'A redirecionar...' : 'Conectar ao Shopify'}
+                </Button>
+              </>
+            ) : (
+              <>
+                {shopInfo && (
+                  <div className="bg-muted p-4 rounded-md space-y-2">
+                    <p><strong>Loja:</strong> {shopInfo.name}</p>
+                    <p><strong>Email:</strong> {shopInfo.email}</p>
+                    <p><strong>Domínio:</strong> {shopInfo.myshopify_domain}</p>
+                    <p><strong>Plano:</strong> {shopInfo.plan_name}</p>
+                    <p><strong>Moeda:</strong> {shopInfo.currency}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSyncOrders}
+                    disabled={syncing}
+                    className="flex-1"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                    {syncing ? 'A sincronizar...' : 'Sincronizar Pedidos'}
+                  </Button>
+
+                  <Button
+                    variant="destructive"
+                    onClick={handleDisconnect}
+                    disabled={loading}
+                  >
+                    <Unlink className="h-4 w-4 mr-2" />
+                    Desconectar
+                  </Button>
+                </div>
+
+                {config.last_sync && (
+                  <p className="text-xs text-muted-foreground">
+                    Última sincronização: {new Date(config.last_sync).toLocaleString('pt-PT')}
+                  </p>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -163,11 +326,18 @@ const Settings = () => {
                 checked={config.is_active}
                 onChange={(e) => setConfig({ ...config, is_active: e.target.checked })}
                 className="h-4 w-4 rounded border-input"
+                disabled={!isConnected}
               />
               <Label htmlFor="is_active" className="cursor-pointer">
                 Ativar automação
               </Label>
             </div>
+
+            {!isConnected && (
+              <p className="text-xs text-amber-600">
+                Conecte primeiro a sua loja Shopify para ativar a automação
+              </p>
+            )}
           </CardContent>
         </Card>
 
