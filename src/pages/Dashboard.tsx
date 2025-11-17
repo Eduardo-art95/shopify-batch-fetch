@@ -3,14 +3,17 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Package, Activity, Settings as SettingsIcon, AlertCircle } from 'lucide-react';
+import { Package, Activity, Settings as SettingsIcon, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/hooks/use-toast';
+import { fetchAndSyncOrders } from '@/integrations/shopify';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [stats, setStats] = useState({
     totalOrders: 0,
     recentLogs: 0,
@@ -18,6 +21,7 @@ const Dashboard = () => {
     lastSync: null as string | null
   });
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -46,6 +50,46 @@ const Dashboard = () => {
     }
   };
 
+  const handleSyncNow = async () => {
+    if (!user) return;
+
+    setSyncing(true);
+    try {
+      const { fetchResult, syncResult } = await fetchAndSyncOrders(user.id);
+
+      if (syncResult.success) {
+        toast({
+          title: "Sincronização concluída",
+          description: `${syncResult.ordersProcessed} encomendas sincronizadas com sucesso`
+        });
+        // Reload stats to show updated data
+        await loadStats();
+      } else {
+        toast({
+          title: "Erro na sincronização",
+          description: syncResult.error || "Ocorreu um erro ao sincronizar encomendas",
+          variant: "destructive"
+        });
+      }
+
+      if (!fetchResult.success && fetchResult.orders.length > 0) {
+        toast({
+          title: "Sincronização parcial",
+          description: `${fetchResult.totalFetched} encomendas obtidas, mas ocorreu um erro: ${fetchResult.error}`,
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro ao sincronizar",
+        description: error.message || "Não foi possível sincronizar encomendas",
+        variant: "destructive"
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -59,11 +103,32 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Visão geral da automação de encomendas Shopify
-          </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground mt-1">
+              Visão geral da automação de encomendas Shopify
+            </p>
+          </div>
+          {stats.isConfigured && (
+            <Button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  A sincronizar...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Sincronizar Agora
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {!stats.isConfigured && (

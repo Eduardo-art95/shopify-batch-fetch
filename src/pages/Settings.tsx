@@ -8,12 +8,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info } from 'lucide-react';
+import { Info, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { verifyShopifyConnection } from '@/integrations/shopify';
 
 const Settings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    tested: boolean;
+    valid: boolean;
+    orderCount?: number;
+    error?: string;
+  } | null>(null);
   const [config, setConfig] = useState({
     shop_url: '',
     access_token: '',
@@ -45,6 +53,57 @@ const Settings = () => {
       }
     } catch (error) {
       console.error('Error loading config:', error);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!config.shop_url || !config.access_token) {
+      toast({
+        title: "Dados em falta",
+        description: "Por favor, preencha o URL da loja e o Access Token",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setTestingConnection(true);
+    setConnectionStatus(null);
+
+    try {
+      const result = await verifyShopifyConnection(config.shop_url, config.access_token);
+
+      setConnectionStatus({
+        tested: true,
+        valid: result.valid,
+        orderCount: result.orderCount,
+        error: result.error
+      });
+
+      if (result.valid) {
+        toast({
+          title: "Conexão bem-sucedida",
+          description: `Ligação ao Shopify verificada. ${result.orderCount} encomendas encontradas.`
+        });
+      } else {
+        toast({
+          title: "Falha na conexão",
+          description: result.error || "Não foi possível conectar ao Shopify",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      setConnectionStatus({
+        tested: true,
+        valid: false,
+        error: error.message
+      });
+      toast({
+        title: "Erro ao testar conexão",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setTestingConnection(false);
     }
   };
 
@@ -130,6 +189,55 @@ const Settings = () => {
               <p className="text-xs text-muted-foreground">
                 Obtenha este token no admin do Shopify em Apps {'>'} Develop apps
               </p>
+            </div>
+
+            <div className="pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={testingConnection || !config.shop_url || !config.access_token}
+                className="w-full"
+              >
+                {testingConnection ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    A testar conexão...
+                  </>
+                ) : (
+                  'Testar Conexão'
+                )}
+              </Button>
+
+              {connectionStatus && (
+                <div className={`mt-3 p-3 rounded-md ${
+                  connectionStatus.valid
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-red-50 border border-red-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {connectionStatus.valid ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                    <span className={`font-medium ${
+                      connectionStatus.valid ? 'text-green-800' : 'text-red-800'
+                    }`}>
+                      {connectionStatus.valid ? 'Conexão bem-sucedida' : 'Falha na conexão'}
+                    </span>
+                  </div>
+                  {connectionStatus.valid && connectionStatus.orderCount !== undefined && (
+                    <p className="text-sm text-green-700 mt-1 ml-7">
+                      {connectionStatus.orderCount} encomendas encontradas na loja
+                    </p>
+                  )}
+                  {!connectionStatus.valid && connectionStatus.error && (
+                    <p className="text-sm text-red-700 mt-1 ml-7">
+                      {connectionStatus.error}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
