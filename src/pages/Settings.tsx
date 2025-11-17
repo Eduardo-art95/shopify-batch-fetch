@@ -8,12 +8,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info } from 'lucide-react';
+import { Info, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 
 const Settings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [config, setConfig] = useState({
     shop_url: '',
     access_token: '',
@@ -79,6 +81,68 @@ const Settings = () => {
     }
   };
 
+  const testConnection = async () => {
+    if (!config.shop_url || !config.access_token) {
+      toast({
+        title: "Dados em falta",
+        description: "Por favor, preencha o URL da loja e o Access Token antes de testar",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setTestingConnection(true);
+    setConnectionStatus('idle');
+
+    try {
+      // First save the config
+      const { error: saveError } = await supabase
+        .from('shopify_config')
+        .upsert({
+          user_id: user!.id,
+          shop_url: config.shop_url,
+          access_token: config.access_token,
+          trigger_order_count: config.trigger_order_count,
+          is_active: config.is_active
+        });
+
+      if (saveError) throw saveError;
+
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      // Call the Edge Function
+      const { data, error } = await supabase.functions.invoke('fetch-shopify-orders', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setConnectionStatus('success');
+        toast({
+          title: "Conexão bem-sucedida!",
+          description: `Buscámos ${data.orders_fetched} encomendas da sua loja Shopify. ${data.orders_saved} foram guardadas.`
+        });
+      } else {
+        throw new Error(data.error || 'Erro desconhecido');
+      }
+    } catch (error: any) {
+      setConnectionStatus('error');
+      console.error('Connection test error:', error);
+      toast({
+        title: "Erro na conexão",
+        description: error.message || 'Não foi possível conectar ao Shopify',
+        variant: "destructive"
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 max-w-3xl">
@@ -129,6 +193,40 @@ const Settings = () => {
               />
               <p className="text-xs text-muted-foreground">
                 Obtenha este token no admin do Shopify em Apps {'>'} Develop apps
+              </p>
+            </div>
+
+            <div className="pt-4 border-t">
+              <Button
+                onClick={testConnection}
+                disabled={testingConnection || !config.shop_url || !config.access_token}
+                variant="outline"
+                className="w-full"
+              >
+                {testingConnection ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    A testar conexão...
+                  </>
+                ) : connectionStatus === 'success' ? (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                    Testar Conexão
+                  </>
+                ) : connectionStatus === 'error' ? (
+                  <>
+                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                    Testar Conexão
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Testar Conexão e Buscar Encomendas
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">
+                Testa a conexão à API do Shopify e busca as encomendas mais recentes
               </p>
             </div>
           </CardContent>
