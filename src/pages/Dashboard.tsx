@@ -3,14 +3,17 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Package, Activity, Settings as SettingsIcon, AlertCircle } from 'lucide-react';
+import { Package, Activity, Settings as SettingsIcon, AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { syncOrders } from '@/services/shopifyApi';
+import { useToast } from '@/hooks/use-toast';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [stats, setStats] = useState({
     totalOrders: 0,
     recentLogs: 0,
@@ -18,12 +21,36 @@ const Dashboard = () => {
     lastSync: null as string | null
   });
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadStats();
     }
   }, [user]);
+
+  const handleSync = async () => {
+    if (!user || syncing) return;
+
+    setSyncing(true);
+    try {
+      const result = await syncOrders(user.id);
+      toast({
+        title: 'Sincronização concluída',
+        description: result.message,
+      });
+      await loadStats();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast({
+        title: 'Erro na sincronização',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const loadStats = async () => {
     try {
@@ -59,11 +86,19 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Visão geral da automação de encomendas Shopify
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground mt-1">
+              Visão geral da automação de encomendas Shopify
+            </p>
+          </div>
+          {stats.isConfigured && (
+            <Button onClick={handleSync} disabled={syncing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'A sincronizar...' : 'Sincronizar Agora'}
+            </Button>
+          )}
         </div>
 
         {!stats.isConfigured && (
