@@ -106,63 +106,54 @@ const Settings = () => {
     setConnectionMessage('');
 
     try {
-      // Test connection by fetching shop info from Shopify API
-      const response = await fetch(`https://${cleanUrl}/admin/api/2024-01/shop.json`, {
-        method: 'GET',
-        headers: {
-          'X-Shopify-Access-Token': config.access_token.trim(),
-          'Content-Type': 'application/json',
-        },
-      });
+      // Test connection using Supabase Edge Function
+      const { data: sessionData } = await supabase.auth.getSession();
 
-      if (response.ok) {
-        const data = await response.json();
+      if (!sessionData.session) {
+        throw new Error('Não autenticado');
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/test-shopify-connection`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionData.session.access_token}`,
+          },
+          body: JSON.stringify({
+            shop_url: cleanUrl,
+            access_token: config.access_token.trim(),
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
         setConnectionStatus('success');
-        setConnectionMessage(`Conectado à loja: ${data.shop.name}`);
+        setConnectionMessage(`Conectado à loja: ${result.shop.name} (${result.shop.plan_name})`);
         toast({
           title: "Conexão bem-sucedida!",
-          description: `Conectado à loja ${data.shop.name}`,
-        });
-      } else if (response.status === 401) {
-        setConnectionStatus('error');
-        setConnectionMessage('Access Token inválido ou sem permissões. Verifique se o token está correto e tem permissão de leitura.');
-        toast({
-          title: "Erro de autenticação",
-          description: "Access Token inválido ou sem permissões",
-          variant: "destructive"
-        });
-      } else if (response.status === 403) {
-        setConnectionStatus('error');
-        setConnectionMessage('Acesso negado. Verifique as permissões da aplicação no Shopify.');
-        toast({
-          title: "Acesso negado",
-          description: "Verifique as permissões da aplicação",
-          variant: "destructive"
-        });
-      } else if (response.status === 404) {
-        setConnectionStatus('error');
-        setConnectionMessage('Loja não encontrada. Verifique se o URL está correto.');
-        toast({
-          title: "Loja não encontrada",
-          description: "Verifique se o URL está correto",
-          variant: "destructive"
+          description: `Conectado à loja ${result.shop.name}`,
         });
       } else {
         setConnectionStatus('error');
-        setConnectionMessage(`Erro ${response.status}: ${response.statusText}`);
+        setConnectionMessage(result.message || 'Erro desconhecido');
         toast({
           title: "Erro na conexão",
-          description: `Código: ${response.status}`,
+          description: result.message,
           variant: "destructive"
         });
       }
     } catch (error: any) {
       setConnectionStatus('error');
-      if (error.message.includes('CORS') || error.name === 'TypeError') {
-        setConnectionMessage('Erro de CORS. A API do Shopify não permite chamadas diretas do navegador. O token e URL parecem válidos, mas é necessário um backend para validar completamente.');
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        setConnectionMessage('Edge Function não disponível. Deploy as funções no Supabase primeiro.');
         toast({
-          title: "Limitação de CORS",
-          description: "O formato das credenciais parece válido. Guarde para usar com o backend.",
+          title: "Edge Function não disponível",
+          description: "Faça deploy das funções no Supabase Dashboard",
+          variant: "destructive"
         });
       } else {
         setConnectionMessage(`Erro: ${error.message}`);
