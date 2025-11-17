@@ -39,7 +39,7 @@ export async function syncOrdersToDatabase(
   orders: ShopifyOrder[]
 ): Promise<SyncResult> {
   let newOrders = 0;
-  let updatedOrders = 0;
+  const updatedOrders = 0;
 
   try {
     for (const order of orders) {

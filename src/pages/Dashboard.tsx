@@ -79,10 +79,10 @@ const Dashboard = () => {
           variant: "destructive"
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Erro ao sincronizar",
-        description: error.message || "Não foi possível sincronizar encomendas",
+        description: error instanceof Error ? error.message : "Não foi possível sincronizar encomendas",
         variant: "destructive"
       });
     } finally {

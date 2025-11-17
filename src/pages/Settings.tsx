@@ -91,15 +91,16 @@ const Settings = () => {
           variant: "destructive"
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
       setConnectionStatus({
         tested: true,
         valid: false,
-        error: error.message
+        error: errorMessage
       });
       toast({
         title: "Erro ao testar conexão",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -127,10 +128,10 @@ const Settings = () => {
         title: "Configurações guardadas",
         description: "As suas configurações foram atualizadas com sucesso"
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Erro ao guardar",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive"
       });
     } finally {
