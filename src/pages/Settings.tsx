@@ -8,12 +8,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Info } from 'lucide-react';
+import { Info, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const Settings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [connectionMessage, setConnectionMessage] = useState('');
   const [config, setConfig] = useState({
     shop_url: '',
     access_token: '',
@@ -48,21 +52,168 @@ const Settings = () => {
     }
   };
 
+  const validateShopUrl = (url: string): string => {
+    // Remove https:// or http:// if present
+    let cleanUrl = url.trim().toLowerCase();
+    cleanUrl = cleanUrl.replace(/^https?:\/\//, '');
+    // Remove trailing slash
+    cleanUrl = cleanUrl.replace(/\/$/, '');
+    return cleanUrl;
+  };
+
+  const validateAccessToken = (token: string): boolean => {
+    // Shopify access tokens start with 'shpat_' or 'shppa_' (for private apps)
+    const trimmedToken = token.trim();
+    return trimmedToken.length > 30 && (
+      trimmedToken.startsWith('shpat_') ||
+      trimmedToken.startsWith('shppa_') ||
+      trimmedToken.startsWith('shpca_') // custom app token
+    );
+  };
+
+  const testConnection = async () => {
+    if (!config.shop_url || !config.access_token) {
+      toast({
+        title: "Campos obrigatórios",
+        description: "Preencha o URL da loja e o Access Token para testar a conexão",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const cleanUrl = validateShopUrl(config.shop_url);
+
+    if (!cleanUrl.includes('.myshopify.com')) {
+      toast({
+        title: "URL inválido",
+        description: "O URL deve ser no formato: minhaloja.myshopify.com",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!validateAccessToken(config.access_token)) {
+      toast({
+        title: "Token inválido",
+        description: "O Access Token deve começar com 'shpat_', 'shppa_' ou 'shpca_' e ter pelo menos 30 caracteres",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setTestingConnection(true);
+    setConnectionStatus('idle');
+    setConnectionMessage('');
+
+    try {
+      // Test connection by fetching shop info from Shopify API
+      const response = await fetch(`https://${cleanUrl}/admin/api/2024-01/shop.json`, {
+        method: 'GET',
+        headers: {
+          'X-Shopify-Access-Token': config.access_token.trim(),
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setConnectionStatus('success');
+        setConnectionMessage(`Conectado à loja: ${data.shop.name}`);
+        toast({
+          title: "Conexão bem-sucedida!",
+          description: `Conectado à loja ${data.shop.name}`,
+        });
+      } else if (response.status === 401) {
+        setConnectionStatus('error');
+        setConnectionMessage('Access Token inválido ou sem permissões. Verifique se o token está correto e tem permissão de leitura.');
+        toast({
+          title: "Erro de autenticação",
+          description: "Access Token inválido ou sem permissões",
+          variant: "destructive"
+        });
+      } else if (response.status === 403) {
+        setConnectionStatus('error');
+        setConnectionMessage('Acesso negado. Verifique as permissões da aplicação no Shopify.');
+        toast({
+          title: "Acesso negado",
+          description: "Verifique as permissões da aplicação",
+          variant: "destructive"
+        });
+      } else if (response.status === 404) {
+        setConnectionStatus('error');
+        setConnectionMessage('Loja não encontrada. Verifique se o URL está correto.');
+        toast({
+          title: "Loja não encontrada",
+          description: "Verifique se o URL está correto",
+          variant: "destructive"
+        });
+      } else {
+        setConnectionStatus('error');
+        setConnectionMessage(`Erro ${response.status}: ${response.statusText}`);
+        toast({
+          title: "Erro na conexão",
+          description: `Código: ${response.status}`,
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      setConnectionStatus('error');
+      if (error.message.includes('CORS') || error.name === 'TypeError') {
+        setConnectionMessage('Erro de CORS. A API do Shopify não permite chamadas diretas do navegador. O token e URL parecem válidos, mas é necessário um backend para validar completamente.');
+        toast({
+          title: "Limitação de CORS",
+          description: "O formato das credenciais parece válido. Guarde para usar com o backend.",
+        });
+      } else {
+        setConnectionMessage(`Erro: ${error.message}`);
+        toast({
+          title: "Erro de conexão",
+          description: error.message,
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const handleSave = async () => {
+    if (config.shop_url && !validateShopUrl(config.shop_url).includes('.myshopify.com')) {
+      toast({
+        title: "URL inválido",
+        description: "O URL deve ser no formato: minhaloja.myshopify.com",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (config.access_token && !validateAccessToken(config.access_token)) {
+      toast({
+        title: "Token inválido",
+        description: "O Access Token deve começar com 'shpat_', 'shppa_' ou 'shpca_'",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const cleanShopUrl = config.shop_url ? validateShopUrl(config.shop_url) : '';
+
       const { error } = await supabase
         .from('shopify_config')
         .upsert({
           user_id: user!.id,
-          shop_url: config.shop_url,
-          access_token: config.access_token,
+          shop_url: cleanShopUrl,
+          access_token: config.access_token.trim(),
           trigger_order_count: config.trigger_order_count,
           is_active: config.is_active
         });
 
       if (error) throw error;
+
+      setConfig(prev => ({ ...prev, shop_url: cleanShopUrl }));
 
       toast({
         title: "Configurações guardadas",
@@ -91,9 +242,20 @@ const Settings = () => {
 
         <Alert>
           <Info className="h-4 w-4" />
-          <AlertDescription>
-            Para conectar à sua loja Shopify, precisará criar uma aplicação privada no admin do Shopify
-            e obter o URL da loja e o Access Token. Mais tarde poderá usar a integração nativa do Shopify.
+          <AlertDescription className="space-y-2">
+            <p className="font-medium">Como obter as credenciais do Shopify:</p>
+            <ol className="list-decimal list-inside space-y-1 text-sm">
+              <li>Aceda ao admin do Shopify → <strong>Settings</strong> → <strong>Apps and sales channels</strong></li>
+              <li>Clique em <strong>Develop apps</strong> → <strong>Create an app</strong></li>
+              <li>Dê um nome à app (ex: "Batch Fetch") e clique em <strong>Create app</strong></li>
+              <li>Vá a <strong>Configuration</strong> → <strong>Admin API integration</strong> → <strong>Configure</strong></li>
+              <li>Selecione as permissões: <strong>read_orders</strong> (obrigatório)</li>
+              <li>Clique em <strong>Save</strong> e depois <strong>Install app</strong></li>
+              <li>Copie o <strong>Admin API access token</strong> (começa com shpat_)</li>
+            </ol>
+            <p className="text-xs mt-2">
+              <strong>Nota:</strong> O URL da sua loja é o domínio .myshopify.com (não o domínio personalizado)
+            </p>
           </AlertDescription>
         </Alert>
 
@@ -130,6 +292,48 @@ const Settings = () => {
               <p className="text-xs text-muted-foreground">
                 Obtenha este token no admin do Shopify em Apps {'>'} Develop apps
               </p>
+            </div>
+
+            <div className="pt-4 border-t">
+              <div className="flex items-center gap-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={testConnection}
+                  disabled={testingConnection || !config.shop_url || !config.access_token}
+                >
+                  {testingConnection ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      A testar...
+                    </>
+                  ) : (
+                    'Testar Conexão'
+                  )}
+                </Button>
+
+                {connectionStatus === 'success' && (
+                  <Badge variant="default" className="bg-green-500">
+                    <CheckCircle className="mr-1 h-3 w-3" />
+                    Conectado
+                  </Badge>
+                )}
+
+                {connectionStatus === 'error' && (
+                  <Badge variant="destructive">
+                    <XCircle className="mr-1 h-3 w-3" />
+                    Erro
+                  </Badge>
+                )}
+              </div>
+
+              {connectionMessage && (
+                <p className={`text-sm mt-2 ${
+                  connectionStatus === 'success' ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {connectionMessage}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
