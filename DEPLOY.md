@@ -1,31 +1,39 @@
 # Deploy da Aplicação
 
-## Deploy Automático no Vercel (Recomendado)
+## Deploy Automático no Netlify (Recomendado)
 
-### 1. Criar conta no Vercel
-- Acede a https://vercel.com/signup
+### 1. Criar conta no Netlify
+- Acede a https://app.netlify.com/signup
 - Regista-te com a tua conta GitHub
 
 ### 2. Importar Projeto
-- Clica em "Add New..." → "Project"
-- Seleciona o repositório `shopify-batch-fetch`
-- Clica em "Import"
+- No dashboard, clica em **"Add new site"** → **"Import an existing project"**
+- Seleciona **"Deploy with GitHub"**
+- Autoriza o Netlify a aceder ao GitHub (se ainda não o fizeste)
+- Procura e seleciona o repositório `shopify-batch-fetch`
+- Clica em **"Deploy site"** (não precisas de configurar nada, o `netlify.toml` já está configurado)
 
 ### 3. Configurar Variáveis de Ambiente
-No dashboard do Vercel, adiciona estas variáveis:
+Depois do primeiro deploy:
+- Vai a **Site settings** → **Environment variables**
+- Clica em **"Add a variable"** e adiciona estas 3 variáveis:
+
 ```
 VITE_SUPABASE_PROJECT_ID=hzdmqymvvhdesmcexdgl
 VITE_SUPABASE_URL=https://hzdmqymvvhdesmcexdgl.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6ZG1xeW12dmhkZXNtY2V4ZGdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5NjcxNjUsImV4cCI6MjA3ODU0MzE2NX0.uQMS9M6hF_cBboAJiZ-8_wiLuLHtkPmTTl1eeVx1elY
 ```
 
-### 4. Deploy
-- Clica em "Deploy"
+### 4. Re-deploy com as variáveis
+- Vai a **Deploys**
+- Clica em **"Trigger deploy"** → **"Deploy site"**
 - Aguarda 1-2 minutos
-- Recebes um URL tipo: `https://shopify-batch-fetch.vercel.app`
 
 ### 5. Acesso
-Acede ao URL fornecido de qualquer computador/telemóvel!
+Recebes um URL tipo: `https://shopify-batch-fetch.netlify.app`
+Podes aceder de qualquer computador/telemóvel!
+
+**Dica:** Podes personalizar o URL em **Site settings** → **Domain management** → **"Change site name"**
 
 ---
 
@@ -66,11 +74,13 @@ supabase functions deploy fetch-shopify-orders
 
 ---
 
-## Alternativa: Netlify
+## Alternativa: Vercel
 
-Se preferires usar Netlify:
-1. https://app.netlify.com/start
-2. Conecta ao GitHub
-3. Seleciona o repositório
-4. Adiciona as mesmas variáveis de ambiente
-5. Deploy!
+Se preferires usar Vercel:
+1. Acede a https://vercel.com/signup
+2. Regista-te com GitHub
+3. Clica em "Add New..." → "Project"
+4. Seleciona o repositório `shopify-batch-fetch`
+5. Adiciona as mesmas 3 variáveis de ambiente
+6. Clica em "Deploy"
+7. Pronto! URL: `https://shopify-batch-fetch.vercel.app`
