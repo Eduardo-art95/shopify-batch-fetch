@@ -49,19 +49,33 @@ const Settings = () => {
 
   const loadConfig = async () => {
     try {
-      const { data } = await supabase
-        .from('shopify_config')
-        .select('*')
-        .eq('user_id', user!.id)
-        .single();
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (data) {
+      if (!session) {
+        console.error('No session found');
+        return;
+      }
+
+      // Call Edge Function to get config
+      const { data, error } = await supabase.functions.invoke('get-config', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (error) {
+        console.error('Error loading config:', error);
+        return;
+      }
+
+      if (data?.data) {
         setConfig({
-          shop_url: data.shop_url || '',
-          access_token: data.access_token || '',
-          trigger_order_count: data.trigger_order_count,
-          is_active: data.is_active,
-          selected_fields: data.selected_fields || {
+          shop_url: data.data.shop_url || '',
+          access_token: data.data.access_token || '',
+          trigger_order_count: data.data.trigger_order_count || 10,
+          is_active: data.data.is_active || false,
+          selected_fields: data.data.selected_fields || {
             customer_phone: false,
             billing_address: false,
             shipping_address: false,
@@ -90,18 +104,32 @@ const Settings = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase
-        .from('shopify_config')
-        .upsert({
-          user_id: user!.id,
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      // Call Edge Function to save config
+      const { data, error } = await supabase.functions.invoke('save-config', {
+        body: {
           shop_url: config.shop_url,
           access_token: config.access_token,
           trigger_order_count: config.trigger_order_count,
           is_active: config.is_active,
           selected_fields: config.selected_fields
-        });
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
       if (error) throw error;
+
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao guardar configurações');
+      }
 
       toast({
         title: "Configurações guardadas",
@@ -132,25 +160,31 @@ const Settings = () => {
     setConnectionStatus('idle');
 
     try {
-      // First save the config
-      const { error: saveError } = await supabase
-        .from('shopify_config')
-        .upsert({
-          user_id: user!.id,
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      // First save the config using Edge Function
+      const { data: saveData, error: saveError } = await supabase.functions.invoke('save-config', {
+        body: {
           shop_url: config.shop_url,
           access_token: config.access_token,
           trigger_order_count: config.trigger_order_count,
           is_active: config.is_active,
           selected_fields: config.selected_fields
-        });
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
       if (saveError) throw saveError;
 
-      // Get current session token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No active session');
+      if (!saveData.success) {
+        throw new Error(saveData.error || 'Erro ao guardar configurações');
+      }
 
-      // Call the Edge Function
+      // Call the Edge Function to fetch orders
       const { data, error } = await supabase.functions.invoke('fetch-shopify-orders', {
         headers: {
           Authorization: `Bearer ${session.access_token}`
